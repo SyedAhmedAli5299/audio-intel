@@ -12,9 +12,18 @@ serve(async (req) => {
   }
 
   try {
+    const openAIKey = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("openai_api_key");
+    if (!openAIKey) {
+      console.error("OPENAI_API_KEY (or openai_api_key) is not set.");
+      return new Response(
+        JSON.stringify({ error: { message: "Server configuration error: The OPENAI_API_KEY is missing.", type: "server_error" } }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { text, targetLanguage = "English" } = await req.json();
     if (!text) {
-      return new Response(JSON.stringify({ error: "No text provided" }), {
+      return new Response(JSON.stringify({ error: { message: "No text provided", type: "client_error" } }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -25,24 +34,24 @@ serve(async (req) => {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+        Authorization: `Bearer ${openAIKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-5-mini-2025-08-07",
+        model: "gpt-4-turbo",
         messages: [
           { role: "system", content: "You are a precise, professional translator." },
           { role: "user", content: prompt },
         ],
-        max_completion_tokens: 600,
+        max_tokens: 600,
       }),
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error("OpenAI translate error:", err);
-      return new Response(JSON.stringify({ error: err }), {
-        status: 500,
+      const errorPayload = await response.json();
+      console.error("OpenAI translate error:", errorPayload);
+      return new Response(JSON.stringify(errorPayload), {
+        status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -55,7 +64,7 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("Error in translate-text function:", error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    return new Response(JSON.stringify({ error: { message: (error as Error).message, type: "server_error" } }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

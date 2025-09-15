@@ -41,16 +41,24 @@ serve(async (req) => {
   }
 
   try {
+    const openAIKey = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("openai_api_key");
+    
+    if (!openAIKey) {
+      console.error("CRITICAL: OPENAI_API_KEY (or openai_api_key) is not set.");
+      return new Response(
+        JSON.stringify({ error: { message: "Server configuration error: The OPENAI_API_KEY is missing.", type: "server_error" } }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { audio, mimeType } = await req.json();
 
     if (!audio) {
-      return new Response(JSON.stringify({ error: "No audio data provided" }), {
+      return new Response(JSON.stringify({ error: { message: "No audio data provided", type: "client_error" } }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    console.log("Received audio for transcription. Bytes (base64 length):", audio.length);
 
     const binaryAudio = processBase64Chunks(audio);
     const blob = new Blob([binaryAudio], { type: mimeType || "audio/webm" });
@@ -62,29 +70,28 @@ serve(async (req) => {
     const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+        Authorization: `Bearer ${openAIKey}`,
       },
       body: formData,
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error("OpenAI transcription error:", errText);
-      return new Response(JSON.stringify({ error: `OpenAI API error: ${errText}` }), {
-        status: 500,
+      const errorPayload = await response.json();
+      console.error("OpenAI transcription API returned an error:", errorPayload);
+      return new Response(JSON.stringify(errorPayload), {
+        status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const result = await response.json();
-    console.log("Transcription result received");
 
     return new Response(JSON.stringify({ text: result.text }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error in transcribe-audio function:", error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    console.error("An unexpected error occurred in the transcribe-audio function:", error);
+    return new Response(JSON.stringify({ error: { message: `An unexpected server error occurred: ${(error as Error).message}`, type: "server_error" } }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

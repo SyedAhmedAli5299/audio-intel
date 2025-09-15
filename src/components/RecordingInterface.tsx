@@ -12,32 +12,76 @@ import {
   FileAudio,
   Clock,
   Volume2,
-  Settings
+  Settings,
+  MicOff,
+  RefreshCw
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/components/ui/use-toast";
+import { toast as shadcnToast } from "@/components/ui/use-toast";
+import { toast as sonnerToast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const RecordingInterface = () => {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [micPermission, setMicPermission] = useState<'prompt' | 'granted' | 'denied' | 'loading'>('loading');
+
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioLevelIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordedChunks = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const checkPermission = async () => {
+      if (!navigator.permissions) {
+        setMicPermission('prompt');
+        return;
+      }
+      try {
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        setMicPermission(permissionStatus.state);
+        permissionStatus.onchange = () => {
+          setMicPermission(permissionStatus.state);
+        };
+      } catch (err) {
+        console.warn("Could not query microphone permission status:", err);
+        setMicPermission('prompt');
+      }
+    };
+
+    checkPermission();
+  }, []);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const ensureAuthenticated = () => {
+    if (!session) {
+      sonnerToast.error("Authentication Required", {
+        description: "Please sign in or create an account to use this feature.",
+      });
+      navigate("/auth");
+      return false;
+    }
+    return true;
+  };
+
   const startRecording = async () => {
+    if (!ensureAuthenticated()) return;
+
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       recordedChunks.current = [];
@@ -52,19 +96,31 @@ export const RecordingInterface = () => {
       mediaRecorder.current.start();
       setIsRecording(true);
       setIsPaused(false);
+      setRecordingTime(0);
       
-      // Start timer
       intervalRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
-      // Simulate audio level monitoring
-      const audioLevelInterval = setInterval(() => {
+      audioLevelIntervalRef.current = setInterval(() => {
         setAudioLevel(Math.random() * 100);
       }, 100);
 
     } catch (error) {
       console.error('Error starting recording:', error);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        shadcnToast({
+          title: "Microphone permission denied",
+          description: "Please allow microphone access in your browser settings to start recording.",
+          variant: "destructive",
+        });
+      } else {
+        shadcnToast({
+          title: "Could not start recording",
+          description: "An unexpected error occurred. Please check your microphone connection and permissions.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -77,6 +133,10 @@ export const RecordingInterface = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      if (audioLevelIntervalRef.current) {
+        clearInterval(audioLevelIntervalRef.current);
+        setAudioLevel(0);
+      }
       
       if (stream.current) {
         stream.current.getTracks().forEach(track => track.stop());
@@ -86,16 +146,6 @@ export const RecordingInterface = () => {
         const blob = new Blob(recordedChunks.current, { type: 'audio/webm' });
         processAudioBlob(blob);
       }
-
-      // Simulate upload progress
-      let progress = 0;
-      const uploadInterval = setInterval(() => {
-        progress += 10;
-        setUploadProgress(progress);
-        if (progress >= 100) {
-          clearInterval(uploadInterval);
-        }
-      }, 200);
     }
   };
 
@@ -106,10 +156,17 @@ export const RecordingInterface = () => {
         intervalRef.current = setInterval(() => {
           setRecordingTime(prev => prev + 1);
         }, 1000);
+        audioLevelIntervalRef.current = setInterval(() => {
+          setAudioLevel(Math.random() * 100);
+        }, 100);
       } else {
         mediaRecorder.current.pause();
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
+        }
+        if (audioLevelIntervalRef.current) {
+          clearInterval(audioLevelIntervalRef.current);
+          setAudioLevel(0);
         }
       }
       setIsPaused(!isPaused);
@@ -117,6 +174,8 @@ export const RecordingInterface = () => {
   };
 
   const processAudioBlob = async (blob: Blob) => {
+    if (!ensureAuthenticated()) return;
+
     try {
       setUploadProgress(10);
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -155,15 +214,45 @@ export const RecordingInterface = () => {
       const payload = { transcript: transcriptText, translation: translated, summary };
       localStorage.setItem('latest_analysis', JSON.stringify(payload));
       setUploadProgress(100);
-      toast({ title: 'Analysis complete', description: 'Opening your results...' });
+      shadcnToast({ title: 'Analysis complete', description: 'Opening your results...' });
       navigate('/transcribes');
     } catch (err: any) {
       console.error('Processing error', err);
-      toast({ title: 'Processing failed', description: err?.message || 'Please try again.', variant: 'destructive' as any });
+      setUploadProgress(0);
+
+      let title = 'Processing Failed';
+      let description = 'An unknown processing error occurred. Please try again.';
+
+      if (err.name === 'FunctionsHttpError' && err.context) {
+        try {
+          const errorBody = await err.context.json();
+          if (errorBody.error && errorBody.error.type === 'insufficient_quota') {
+            title = 'OpenAI Quota Exceeded';
+            description = 'Your OpenAI account has insufficient funds or has hit its usage limit. Please check your plan and billing details on the OpenAI website.';
+          } else if (errorBody.error && errorBody.error.message) {
+            description = errorBody.error.message;
+          } else {
+            description = errorBody.error || `The AI service returned an error. Status: ${err.context.status}.`;
+          }
+        } catch (e) {
+          description = `The AI service returned an unreadable error. Status: ${err.context.status}.`;
+        }
+      } else if (err.message) {
+        description = err.message;
+      }
+
+      shadcnToast({ 
+        title: title, 
+        description: description, 
+        variant: 'destructive',
+        duration: 10000,
+      });
     }
   };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!ensureAuthenticated()) return;
+
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFileName(file.name);
@@ -171,10 +260,18 @@ export const RecordingInterface = () => {
     await processAudioBlob(file);
   };
 
+  const handleUploadClick = () => {
+    if (!ensureAuthenticated()) return;
+    fileInputRef.current?.click();
+  };
+
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+      }
+      if (audioLevelIntervalRef.current) {
+        clearInterval(audioLevelIntervalRef.current);
       }
     };
   }, []);
@@ -193,7 +290,6 @@ export const RecordingInterface = () => {
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">
-            {/* Recording Card */}
             <Card className="glass border-border/50">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -202,73 +298,108 @@ export const RecordingInterface = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Recording Status */}
-                <div className="text-center space-y-4">
-                  <div className="relative">
-                    <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${
-                      isRecording 
-                        ? 'bg-destructive/20 border-4 border-destructive animate-pulse' 
-                        : 'bg-primary/20 border-4 border-primary/30'
-                    }`}>
-                      <Mic className={`h-8 w-8 ${isRecording ? 'text-destructive' : 'text-primary'}`} />
-                    </div>
-                    {isRecording && (
-                      <Badge variant="destructive" className="absolute -top-2 -right-2">
-                        REC
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="text-2xl font-mono font-bold">
-                      {formatTime(recordingTime)}
-                    </div>
-                    {isRecording && (
-                      <div className="flex items-center justify-center gap-2">
-                        <Volume2 className="h-4 w-4 text-primary" />
-                        <Progress value={audioLevel} className="w-32 h-2" />
+                {micPermission === 'loading' && (
+                  <div className="space-y-6">
+                    <div className="text-center space-y-4">
+                      <Skeleton className="w-24 h-24 mx-auto rounded-full" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-8 w-24 mx-auto" />
                       </div>
-                    )}
+                    </div>
+                    <div className="flex justify-center">
+                      <Skeleton className="h-11 w-44" />
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Controls */}
-                <div className="flex justify-center gap-3">
-                  {!isRecording ? (
-                    <Button 
-                      variant="recording" 
-                      size="lg"
-                      onClick={startRecording}
-                      className="flex items-center gap-2"
-                    >
-                      <Mic className="h-4 w-4" />
-                      Start Recording
+                {micPermission === 'denied' && (
+                  <div className="flex flex-col items-center justify-center text-center space-y-4 p-4 bg-destructive/10 rounded-lg h-full">
+                    <MicOff className="h-10 w-10 text-destructive" />
+                    <h4 className="font-semibold text-lg">Microphone Access Denied</h4>
+                    <p className="text-sm text-muted-foreground max-w-xs">
+                      To record audio, please allow microphone access in your browser's site settings.
+                    </p>
+                    <Button variant="secondary" onClick={() => window.location.reload()}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      I've enabled it
                     </Button>
-                  ) : (
-                    <>
-                      <Button 
-                        variant={isPaused ? "default" : "secondary"}
-                        size="lg"
-                        onClick={pauseRecording}
-                      >
-                        {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        size="lg"
-                        onClick={stopRecording}
-                      >
-                        <Square className="h-4 w-4" />
-                        Stop
-                      </Button>
-                    </>
-                  )}
-                </div>
+                  </div>
+                )}
+                
+                {(micPermission === 'granted' || micPermission === 'prompt') && (
+                  <>
+                    <div className="text-center space-y-4">
+                      <div className="relative">
+                        <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${
+                          isRecording 
+                            ? 'bg-destructive/20 border-4 border-destructive animate-pulse' 
+                            : 'bg-primary/20 border-4 border-primary/30'
+                        }`}>
+                          <Mic className={`h-8 w-8 ${isRecording ? 'text-destructive' : 'text-primary'}`} />
+                        </div>
+                        {isRecording && !isPaused && (
+                          <Badge variant="destructive" className="absolute top-0 right-0">
+                            REC
+                          </Badge>
+                        )}
+                        {isPaused && (
+                          <Badge variant="secondary" className="absolute top-0 right-0">
+                            PAUSED
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-2xl font-mono font-bold">
+                          {formatTime(recordingTime)}
+                        </div>
+                        {isRecording && (
+                          <div className="flex items-center justify-center gap-2">
+                            <Volume2 className="h-4 w-4 text-primary" />
+                            <Progress value={audioLevel} className="w-32 h-2" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-center gap-3">
+                      {!isRecording ? (
+                        <Button 
+                          variant="recording" 
+                          size="lg"
+                          onClick={startRecording}
+                          className="flex items-center gap-2"
+                        >
+                          <Mic className="h-4 w-4" />
+                          Start Recording
+                        </Button>
+                      ) : (
+                        <>
+                          <Button 
+                            variant={isPaused ? "default" : "secondary"}
+                            size="lg"
+                            onClick={pauseRecording}
+                          >
+                            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            size="lg"
+                            onClick={stopRecording}
+                          >
+                            <Square className="h-4 w-4" />
+                            Stop
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
 
                 {uploadProgress > 0 && uploadProgress < 100 && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-6">
                     <div className="flex justify-between text-sm">
-                      <span>Uploading...</span>
+                      <span>Analyzing...</span>
                       <span>{uploadProgress}%</span>
                     </div>
                     <Progress value={uploadProgress} />
@@ -277,7 +408,6 @@ export const RecordingInterface = () => {
               </CardContent>
             </Card>
 
-            {/* Upload Card */}
             <Card className="glass border-border/50">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -301,7 +431,7 @@ export const RecordingInterface = () => {
                   <p className="text-sm text-muted-foreground mb-4">
                     Supports MP3, WAV, M4A files up to 100MB
                   </p>
-                  <Button variant="hero" onClick={() => fileInputRef.current?.click()}>
+                  <Button variant="hero" onClick={handleUploadClick}>
                     Choose File
                   </Button>
                   {selectedFileName && (
@@ -314,7 +444,7 @@ export const RecordingInterface = () => {
                 {uploadProgress > 0 && uploadProgress < 100 && (
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span>Uploading...</span>
+                      <span>Analyzing...</span>
                       <span>{uploadProgress}%</span>
                     </div>
                     <Progress value={uploadProgress} />
