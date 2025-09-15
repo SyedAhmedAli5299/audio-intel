@@ -12,11 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const openAIKey = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("openai_api_key");
-    if (!openAIKey) {
-      console.error("OPENAI_API_KEY (or openai_api_key) is not set.");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("gemini_api_key");
+    if (!geminiApiKey) {
+      console.error("GEMINI_API_KEY (or gemini_api_key) is not set.");
       return new Response(
-        JSON.stringify({ error: { message: "Server configuration error: The OPENAI_API_KEY is missing.", type: "server_error" } }),
+        JSON.stringify({ error: { message: "Server configuration error: The GEMINI_API_KEY is missing.", type: "server_error" } }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -29,27 +29,31 @@ serve(async (req) => {
       });
     }
 
-    const prompt = `Translate the following text into ${targetLanguage} with correct grammar and natural fluency. Only return the translated text.\n\nText:\n${text}`;
+    const prompt = `Translate the following text into ${targetLanguage} with correct grammar and natural fluency. Only return the translated text without any additional formatting or explanations.\n\nText:\n${text}`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: prompt
+        }]
+      }],
+      generationConfig: {
+        maxOutputTokens: 600,
+        temperature: 0.1,
+      }
+    };
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${openAIKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "gpt-4-turbo",
-        messages: [
-          { role: "system", content: "You are a precise, professional translator." },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 600,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorPayload = await response.json();
-      console.error("OpenAI translate error:", errorPayload);
+      console.error("Gemini translate error:", errorPayload);
       return new Response(JSON.stringify(errorPayload), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -57,7 +61,7 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const translated = data.choices?.[0]?.message?.content ?? "";
+    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     return new Response(JSON.stringify({ translated }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

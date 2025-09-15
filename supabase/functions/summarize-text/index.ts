@@ -12,11 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const openAIKey = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("openai_api_key");
-    if (!openAIKey) {
-      console.error("OPENAI_API_KEY (or openai_api_key) is not set.");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("gemini_api_key");
+    if (!geminiApiKey) {
+      console.error("GEMINI_API_KEY (or gemini_api_key) is not set.");
       return new Response(
-        JSON.stringify({ error: { message: "Server configuration error: The OPENAI_API_KEY is missing.", type: "server_error" } }),
+        JSON.stringify({ error: { message: "Server configuration error: The GEMINI_API_KEY is missing.", type: "server_error" } }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -29,28 +29,47 @@ serve(async (req) => {
       });
     }
 
-    const system = "You are an expert meeting notes assistant. Return concise, structured JSON suitable for UI rendering.";
-    const user = `Summarize the meeting transcript below into this exact JSON schema: {\n  "keyTakeaways": string[],\n  "actionItems": string[],\n  "topics": string[]\n}\nRules:\n- Be concise and specific.\n- Use clear, short bullet points.\n- Extract actionable tasks for actionItems with verbs.\n- Cover main themes in topics.\n\nTranscript:\n${transcript}`;
+    const prompt = `You are an expert meeting notes assistant. Analyze the meeting transcript below and return a JSON response with this exact structure:
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+{
+  "keyTakeaways": ["takeaway1", "takeaway2", ...],
+  "actionItems": ["action1", "action2", ...],
+  "topics": ["topic1", "topic2", ...]
+}
+
+Rules:
+- Be concise and specific
+- Use clear, short bullet points
+- Extract actionable tasks for actionItems with verbs
+- Cover main themes in topics
+- Return ONLY the JSON object, no additional text or formatting
+
+Transcript:
+${transcript}`;
+
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: prompt
+        }]
+      }],
+      generationConfig: {
+        maxOutputTokens: 800,
+        temperature: 0.1,
+      }
+    };
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${openAIKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "gpt-4-turbo",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        max_tokens: 800,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorPayload = await response.json();
-      console.error("OpenAI summarize error:", errorPayload);
+      console.error("Gemini summarize error:", errorPayload);
       return new Response(JSON.stringify(errorPayload), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -58,11 +77,14 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content ?? "{}";
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
     let summary;
     try {
-      summary = JSON.parse(content);
+      // Clean the response to extract JSON if it's wrapped in markdown or other formatting
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonString = jsonMatch ? jsonMatch[0] : content;
+      summary = JSON.parse(jsonString);
     } catch (_) {
       summary = { keyTakeaways: [], actionItems: [], topics: [] };
     }

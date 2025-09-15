@@ -41,12 +41,12 @@ serve(async (req) => {
   }
 
   try {
-    const openAIKey = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("openai_api_key");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("gemini_api_key");
     
-    if (!openAIKey) {
-      console.error("CRITICAL: OPENAI_API_KEY (or openai_api_key) is not set.");
+    if (!geminiApiKey) {
+      console.error("CRITICAL: GEMINI_API_KEY (or gemini_api_key) is not set.");
       return new Response(
-        JSON.stringify({ error: { message: "Server configuration error: The OPENAI_API_KEY is missing.", type: "server_error" } }),
+        JSON.stringify({ error: { message: "Server configuration error: The GEMINI_API_KEY is missing.", type: "server_error" } }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -61,23 +61,37 @@ serve(async (req) => {
     }
 
     const binaryAudio = processBase64Chunks(audio);
-    const blob = new Blob([binaryAudio], { type: mimeType || "audio/webm" });
+    
+    // Convert audio to base64 for Gemini API
+    const audioBase64 = btoa(String.fromCharCode(...binaryAudio));
+    
+    // Determine MIME type for Gemini
+    const geminiMimeType = mimeType || "audio/webm";
 
-    const formData = new FormData();
-    formData.append("file", blob, "audio.webm");
-    formData.append("model", "whisper-1");
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: "Please transcribe this audio file accurately. Return only the transcribed text without any additional formatting or explanations."
+        }, {
+          inline_data: {
+            mime_type: geminiMimeType,
+            data: audioBase64
+          }
+        }]
+      }]
+    };
 
-    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${openAIKey}`,
+        "Content-Type": "application/json",
       },
-      body: formData,
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorPayload = await response.json();
-      console.error("OpenAI transcription API returned an error:", errorPayload);
+      console.error("Gemini API returned an error:", errorPayload);
       return new Response(JSON.stringify(errorPayload), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -85,8 +99,9 @@ serve(async (req) => {
     }
 
     const result = await response.json();
+    const transcribedText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-    return new Response(JSON.stringify({ text: result.text }), {
+    return new Response(JSON.stringify({ text: transcribedText }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
