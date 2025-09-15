@@ -14,8 +14,12 @@ import {
   Volume2,
   Settings
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/components/ui/use-toast";
+import { useNavigate } from "react-router-dom";
 
 export const RecordingInterface = () => {
+  const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -25,6 +29,7 @@ export const RecordingInterface = () => {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordedChunks = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -35,11 +40,13 @@ export const RecordingInterface = () => {
   const startRecording = async () => {
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedChunks.current = [];
       mediaRecorder.current = new MediaRecorder(stream.current);
       
       mediaRecorder.current.ondataavailable = (event) => {
-        // Handle recorded data
-        console.log('Recording data available:', event.data);
+        if (event.data && event.data.size > 0) {
+          recordedChunks.current.push(event.data);
+        }
       };
 
       mediaRecorder.current.start();
@@ -75,6 +82,11 @@ export const RecordingInterface = () => {
         stream.current.getTracks().forEach(track => track.stop());
       }
 
+      if (recordedChunks.current.length) {
+        const blob = new Blob(recordedChunks.current, { type: 'audio/webm' });
+        processAudioBlob(blob);
+      }
+
       // Simulate upload progress
       let progress = 0;
       const uploadInterval = setInterval(() => {
@@ -104,21 +116,59 @@ export const RecordingInterface = () => {
     }
   };
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const processAudioBlob = async (blob: Blob) => {
+    try {
+      setUploadProgress(10);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const res = reader.result as string;
+          const b64 = res.split(",")[1] || "";
+          resolve(b64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      setUploadProgress(20);
+      const { data: tData, error: tErr } = await supabase.functions.invoke('transcribe-audio', {
+        body: { audio: base64, mimeType: blob.type },
+      });
+      if (tErr) throw tErr;
+      const transcriptText: string = tData?.text || "";
+
+      setUploadProgress(60);
+      const { data: trData, error: trErr } = await supabase.functions.invoke('translate-text', {
+        body: { text: transcriptText, targetLanguage: 'English' },
+      });
+      if (trErr) throw trErr;
+      const translated: string = trData?.translated || "";
+
+      setUploadProgress(85);
+      const { data: sData, error: sErr } = await supabase.functions.invoke('summarize-text', {
+        body: { transcript: transcriptText },
+      });
+      if (sErr) throw sErr;
+
+      const summary = sData?.summary || { keyTakeaways: [], actionItems: [], topics: [] };
+
+      const payload = { transcript: transcriptText, translation: translated, summary };
+      localStorage.setItem('latest_analysis', JSON.stringify(payload));
+      setUploadProgress(100);
+      toast({ title: 'Analysis complete', description: 'Opening your results...' });
+      navigate('/transcribes');
+    } catch (err: any) {
+      console.error('Processing error', err);
+      toast({ title: 'Processing failed', description: err?.message || 'Please try again.', variant: 'destructive' as any });
+    }
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFileName(file.name);
     setUploadProgress(0);
-
-    // Simulate upload progress
-    let progress = 0;
-    const uploadInterval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      if (progress >= 100) {
-        clearInterval(uploadInterval);
-      }
-    }, 200);
+    await processAudioBlob(file);
   };
 
   useEffect(() => {

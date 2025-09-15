@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/enhanced-button";
 import { Badge } from "@/components/ui/badge";
@@ -24,15 +24,15 @@ export const DashboardPanels = () => {
   const [showTranscript, setShowTranscript] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const sampleTranscript = `Good morning everyone, welcome to our quarterly product review meeting. I'm excited to share the latest updates on our AI transcription platform. 
+  const [transcript, setTranscript] = useState<string>(`Good morning everyone, welcome to our quarterly product review meeting. I'm excited to share the latest updates on our AI transcription platform. 
 
-We've made significant progress in the last quarter, particularly in improving accuracy for technical vocabulary and handling multiple speakers...`;
+We've made significant progress in the last quarter, particularly in improving accuracy for technical vocabulary and handling multiple speakers...`);
 
-  const sampleTranslation = `Buenos días a todos, bienvenidos a nuestra reunión trimestral de revisión de productos. Estoy emocionado de compartir las últimas actualizaciones en nuestra plataforma de transcripción de IA.
+  const [translation, setTranslation] = useState<string>(`Buenos días a todos, bienvenidos a nuestra reunión trimestral de revisión de productos. Estoy emocionado de compartir las últimas actualizaciones en nuestra plataforma de transcripción de IA.
 
-Hemos hecho un progreso significativo en el último trimestre, particularmente en mejorar la precisión para el vocabulario técnico...`;
+Hemos hecho un progreso significativo en el último trimestre, particularmente en mejorar la precisión para el vocabulario técnico...`);
 
-  const sampleSummary = {
+  const [summary, setSummary] = useState({
     keyTakeaways: [
       "Q3 product review meeting successfully conducted",
       "AI transcription platform showed significant accuracy improvements",
@@ -51,7 +51,22 @@ Hemos hecho un progreso significativo en el último trimestre, particularmente e
       "Technical Improvements",
       "Future Roadmap Planning"
     ]
-  };
+  });
+
+  // Load latest analysis if available
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('latest_analysis');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.transcript) setTranscript(parsed.transcript);
+        if (parsed.translation) setTranslation(parsed.translation);
+        if (parsed.summary) setSummary(parsed.summary);
+      }
+    } catch (e) {
+      console.warn('Failed to load latest analysis from storage', e);
+    }
+  }, []);
 
   const processingStages = [
     { key: "transcribing", label: "Transcribing", progress: 100, complete: true },
@@ -147,7 +162,7 @@ Hemos hecho un progreso significativo en el último trimestre, particularmente e
                   {showTranscript && (
                     <div className="prose prose-sm prose-invert max-w-none">
                       <div className="p-4 bg-muted/30 rounded-lg text-sm leading-relaxed">
-                        {sampleTranscript}
+{transcript}
                       </div>
                     </div>
                   )}
@@ -185,7 +200,7 @@ Hemos hecho un progreso significativo en el último trimestre, particularmente e
                     <TabsContent value="spanish" className="mt-4">
                       <div className="prose prose-sm prose-invert max-w-none">
                         <div className="p-4 bg-muted/30 rounded-lg text-sm leading-relaxed">
-                          {sampleTranslation}
+{translation}
                         </div>
                       </div>
                     </TabsContent>
@@ -231,7 +246,7 @@ Hemos hecho un progreso significativo en el último trimestre, particularmente e
                       Key Takeaways
                     </h4>
                     <ul className="space-y-2">
-                      {sampleSummary.keyTakeaways.map((item, index) => (
+                      {summary.keyTakeaways.map((item, index) => (
                         <li key={index} className="text-sm leading-relaxed text-muted-foreground flex items-start gap-2">
                           <span className="text-primary mt-1">•</span>
                           {item}
@@ -247,7 +262,7 @@ Hemos hecho un progreso significativo en el último trimestre, particularmente e
                       Action Items
                     </h4>
                     <ul className="space-y-2">
-                      {sampleSummary.actionItems.map((item, index) => (
+                      {summary.actionItems.map((item, index) => (
                         <li key={index} className="text-sm leading-relaxed text-muted-foreground flex items-start gap-2">
                           <span className="text-warning mt-1">→</span>
                           {item}
@@ -260,7 +275,7 @@ Hemos hecho un progreso significativo en el último trimestre, particularmente e
                   <div>
                     <h4 className="font-semibold mb-3">Topics Discussed</h4>
                     <div className="flex flex-wrap gap-2">
-                      {sampleSummary.topics.map((topic, index) => (
+                      {summary.topics.map((topic, index) => (
                         <Badge key={index} variant="secondary" className="text-xs">
                           {topic}
                         </Badge>

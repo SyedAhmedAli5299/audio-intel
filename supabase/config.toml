@@ -1,1 +1,10 @@
 project_id = "cycveijssachnwlixeiw"
+
+[functions.transcribe-audio]
+verify_jwt = false
+
+[functions.translate-text]
+verify_jwt = false
+
+[functions.summarize-text]
+verify_jwt = false
