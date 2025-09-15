@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import Record from "./pages/Record";
+import Upload from "./pages/Upload";
+import Transcribes from "./pages/Transcribes";
 
 const queryClient = new QueryClient();
 
@@ -16,6 +19,11 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/record" element={<Record />} />
+          <Route path="/upload" element={<Upload />} />
+          <Route path="/transcribes" element={<Transcribes />} />
+          <Route path="/start-recording-now" element={<Record />} />
+          <Route path="/upload-audio-file" element={<Upload />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -21,10 +21,11 @@ export const RecordingInterface = () => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -101,6 +102,23 @@ export const RecordingInterface = () => {
       }
       setIsPaused(!isPaused);
     }
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedFileName(file.name);
+    setUploadProgress(0);
+
+    // Simulate upload progress
+    let progress = 0;
+    const uploadInterval = setInterval(() => {
+      progress += 10;
+      setUploadProgress(progress);
+      if (progress >= 100) {
+        clearInterval(uploadInterval);
+      }
+    }, 200);
   };
 
   useEffect(() => {
@@ -218,7 +236,14 @@ export const RecordingInterface = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="border-2 border-dashed border-border/50 rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+                <div className="border-2 border-dashed border-border/50 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={handleFileSelected}
+                  />
                   <FileAudio className="h-12 w-12 text-primary mx-auto mb-4" />
                   <p className="text-lg font-medium mb-2">
                     Drop your audio file here
@@ -226,10 +251,25 @@ export const RecordingInterface = () => {
                   <p className="text-sm text-muted-foreground mb-4">
                     Supports MP3, WAV, M4A files up to 100MB
                   </p>
-                  <Button variant="hero">
+                  <Button variant="hero" onClick={() => fileInputRef.current?.click()}>
                     Choose File
                   </Button>
+                  {selectedFileName && (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      Selected: {selectedFileName}
+                    </p>
+                  )}
                 </div>
+
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Uploading...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <Progress value={uploadProgress} />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="flex items-center gap-2 text-muted-foreground">

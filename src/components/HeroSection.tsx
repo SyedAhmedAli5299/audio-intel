@@ -12,6 +12,7 @@ import {
   Clock
 } from "lucide-react";
 import heroImage from "@/assets/hero-bg.jpg";
+import { Link } from "react-router-dom";
 
 export const HeroSection = () => {
   const features = [
@@ -67,13 +68,17 @@ export const HeroSection = () => {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-            <Button variant="hero" size="xl" className="text-lg">
-              <Play className="mr-2 h-5 w-5" />
-              Start Recording Now
+            <Button variant="hero" size="xl" className="text-lg" asChild>
+              <Link to="/record">
+                <Play className="mr-2 h-5 w-5" />
+                Start Recording Now
+              </Link>
             </Button>
-            <Button variant="glass" size="xl" className="text-lg">
-              <Upload className="mr-2 h-5 w-5" />
-              Upload Audio File
+            <Button variant="glass" size="xl" className="text-lg" asChild>
+              <Link to="/upload">
+                <Upload className="mr-2 h-5 w-5" />
+                Upload Audio File
+              </Link>
             </Button>
           </div>
 

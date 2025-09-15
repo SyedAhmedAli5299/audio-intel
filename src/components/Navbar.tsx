@@ -13,16 +13,18 @@ import {
   FileText,
   Home
 } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 
 export const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const location = useLocation();
 
   const navItems = [
-    { icon: Home, label: "Dashboard", active: true },
-    { icon: Mic, label: "Record" },
-    { icon: Upload, label: "Upload" },
-    { icon: FileText, label: "Transcripts" },
+    { icon: Home, label: "Dashboard", to: "/" },
+    { icon: Mic, label: "Record", to: "/record" },
+    { icon: Upload, label: "Upload", to: "/upload" },
+    { icon: FileText, label: "Transcripts", to: "/transcribes" },
   ];
 
   return (
@@ -44,19 +46,23 @@ export const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-6">
-            {navItems.map((item) => (
-              <button
-                key={item.label}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
-                  item.active
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                <span className="text-sm font-medium">{item.label}</span>
-              </button>
-            ))}
+            {navItems.map((item) => {
+              const active = location.pathname === item.to;
+              return (
+                <Link
+                  key={item.label}
+                  to={item.to}
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+                    active
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  }`}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
 
           {/* User Menu */}
@@ -104,19 +110,24 @@ export const Navbar = () => {
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-border/40 animate-fade-in">
             <div className="flex flex-col space-y-2">
-              {navItems.map((item) => (
-                <button
-                  key={item.label}
-                  className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                    item.active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                  }`}
-                >
-                  <item.icon className="h-5 w-5" />
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              ))}
+              {navItems.map((item) => {
+                const active = location.pathname === item.to;
+                return (
+                  <Link
+                    key={item.label}
+                    to={item.to}
+                    onClick={() => setIsMenuOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                      active
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    }`}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    <span className="font-medium">{item.label}</span>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         )}
