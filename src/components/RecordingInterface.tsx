@@ -232,10 +232,10 @@ export const RecordingInterface = () => {
           } else if (errorBody.error && errorBody.error.message) {
             description = errorBody.error.message;
           } else {
-            description = errorBody.error || `The AI service returned an error. Status: ${err.context.status}.`;
+            description = errorBody.error || `The Gemini AI service returned an error. Status: ${err.context.status}.`;
           }
         } catch (e) {
-          description = `The AI service returned an unreadable error. Status: ${err.context.status}.`;
+          description = `The Gemini AI service returned an unreadable error. Status: ${err.context.status}.`;
         }
       } else if (err.message) {
         description = err.message;
