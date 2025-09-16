@@ -8,7 +8,8 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Record from "./pages/Record";
 import Upload from "./pages/Upload";
-import Transcribes from "./pages/Transcribes";
+import TranscribesList from "./pages/TranscribesList";
+import MeetingDetails from "./pages/MeetingDetails";
 import AuthPage from "./pages/Auth";
 
 const queryClient = new QueryClient();
@@ -25,7 +26,8 @@ const App = () => (
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/record" element={<Record />} />
             <Route path="/upload" element={<Upload />} />
-            <Route path="/transcribes" element={<Transcribes />} />
+            <Route path="/transcribes" element={<TranscribesList />} />
+            <Route path="/transcribes/:meetingId" element={<MeetingDetails />} />
             <Route path="/start-recording-now" element={<Record />} />
             <Route path="/upload-audio-file" element={<Upload />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

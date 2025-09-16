@@ -12,11 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("gemini_api_key");
-    if (!geminiApiKey) {
-      console.error("GEMINI_API_KEY (or gemini_api_key) is not set.");
+    const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
+    if (!googleApiKey) {
+      console.error("GOOGLE_API_KEY is not set.");
       return new Response(
-        JSON.stringify({ error: { message: "Server configuration error: The GEMINI_API_KEY is missing.", type: "server_error" } }),
+        JSON.stringify({ error: { message: "Server configuration error: The GOOGLE_API_KEY is missing.", type: "server_error" } }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -29,21 +29,18 @@ serve(async (req) => {
       });
     }
 
-    const prompt = `Translate the following text into ${targetLanguage} with correct grammar and natural fluency. Only return the translated text without any additional formatting or explanations.\n\nText:\n${text}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${googleApiKey}`;
+    
+    const prompt = `You are a precise, professional translator. Translate the following text into ${targetLanguage} with correct grammar and natural fluency. Respond ONLY with the translated text.\n\nText:\n${text}`;
 
     const requestBody = {
-      contents: [{
-        parts: [{
-          text: prompt
-        }]
-      }],
+      contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         maxOutputTokens: 600,
-        temperature: 0.1,
-      }
+      },
     };
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -53,7 +50,7 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorPayload = await response.json();
-      console.error("Gemini translate error:", errorPayload);
+      console.error("Google Gemini translate error:", errorPayload);
       return new Response(JSON.stringify(errorPayload), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -61,14 +58,16 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
     return new Response(JSON.stringify({ translated }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error in translate-text function:", error);
-    return new Response(JSON.stringify({ error: { message: (error as Error).message, type: "server_error" } }), {
+    const err = error as Error;
+    console.error("Error in translate-text function:", err.message);
+    console.error("Stack trace:", err.stack);
+    return new Response(JSON.stringify({ error: { message: err.message, type: "server_error" } }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -1,7 +1,6 @@
 import { Navbar } from "@/components/Navbar";
 import { HeroSection } from "@/components/HeroSection";
 import { RecordingInterface } from "@/components/RecordingInterface";
-import { DashboardPanels } from "@/components/DashboardPanels";
 import { PricingSection } from "@/components/PricingSection";
 
 const Index = () => {
@@ -11,7 +10,6 @@ const Index = () => {
       <main>
         <HeroSection />
         <RecordingInterface />
-        <DashboardPanels />
         <PricingSection />
       </main>
     </div>

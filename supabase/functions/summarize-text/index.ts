@@ -6,17 +6,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to strip markdown from JSON
+const stripMarkdown = (text: string) => {
+  return text.replace(/```json\n?|```/g, "").trim();
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("gemini_api_key");
-    if (!geminiApiKey) {
-      console.error("GEMINI_API_KEY (or gemini_api_key) is not set.");
+    const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
+    if (!googleApiKey) {
+      console.error("GOOGLE_API_KEY is not set.");
       return new Response(
-        JSON.stringify({ error: { message: "Server configuration error: The GEMINI_API_KEY is missing.", type: "server_error" } }),
+        JSON.stringify({ error: { message: "Server configuration error: The GOOGLE_API_KEY is missing.", type: "server_error" } }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -29,37 +34,19 @@ serve(async (req) => {
       });
     }
 
-    const prompt = `You are an expert meeting notes assistant. Analyze the meeting transcript below and return a JSON response with this exact structure:
-
-{
-  "keyTakeaways": ["takeaway1", "takeaway2", ...],
-  "actionItems": ["action1", "action2", ...],
-  "topics": ["topic1", "topic2", ...]
-}
-
-Rules:
-- Be concise and specific
-- Use clear, short bullet points
-- Extract actionable tasks for actionItems with verbs
-- Cover main themes in topics
-- Return ONLY the JSON object, no additional text or formatting
-
-Transcript:
-${transcript}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${googleApiKey}`;
+    
+    const prompt = `You are an expert meeting notes assistant. Summarize the meeting transcript below into this exact JSON schema:\n{\n  "keyTakeaways": string[],\n  "actionItems": string[],\n  "topics": string[]\n}\nRules:\n- Respond ONLY with the JSON object.\n- Be concise and specific.\n- Use clear, short bullet points.\n- Extract actionable tasks for actionItems with verbs.\n- Cover main themes in topics.\n\nTranscript:\n${transcript}`;
 
     const requestBody = {
-      contents: [{
-        parts: [{
-          text: prompt
-        }]
-      }],
+      contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
+        response_mime_type: "application/json",
         maxOutputTokens: 800,
-        temperature: 0.1,
-      }
+      },
     };
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -69,7 +56,7 @@ ${transcript}`;
 
     if (!response.ok) {
       const errorPayload = await response.json();
-      console.error("Gemini summarize error:", errorPayload);
+      console.error("Google Gemini summarize error:", errorPayload);
       return new Response(JSON.stringify(errorPayload), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -77,15 +64,14 @@ ${transcript}`;
     }
 
     const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+    
     let summary;
     try {
-      // Clean the response to extract JSON if it's wrapped in markdown or other formatting
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const jsonString = jsonMatch ? jsonMatch[0] : content;
-      summary = JSON.parse(jsonString);
+      // Gemini might wrap the JSON in markdown, so we strip it.
+      summary = JSON.parse(stripMarkdown(content));
     } catch (_) {
+      console.error("Failed to parse summary JSON from Gemini:", content);
       summary = { keyTakeaways: [], actionItems: [], topics: [] };
     }
 
@@ -93,8 +79,10 @@ ${transcript}`;
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error in summarize-text function:", error);
-    return new Response(JSON.stringify({ error: { message: (error as Error).message, type: "server_error" } }), {
+    const err = error as Error;
+    console.error("Error in summarize-text function:", err.message);
+    console.error("Stack trace:", err.stack);
+    return new Response(JSON.stringify({ error: { message: err.message, type: "server_error" } }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

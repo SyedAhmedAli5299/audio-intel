@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export const RecordingInterface = () => {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -69,7 +69,7 @@ export const RecordingInterface = () => {
   };
 
   const ensureAuthenticated = () => {
-    if (!session) {
+    if (!session || !user) {
       sonnerToast.error("Authentication Required", {
         description: "Please sign in or create an account to use this feature.",
       });
@@ -144,7 +144,7 @@ export const RecordingInterface = () => {
 
       if (recordedChunks.current.length) {
         const blob = new Blob(recordedChunks.current, { type: 'audio/webm' });
-        processAudioBlob(blob);
+        processAudioBlob(blob, `Recording - ${new Date().toLocaleString()}`);
       }
     }
   };
@@ -173,8 +173,8 @@ export const RecordingInterface = () => {
     }
   };
 
-  const processAudioBlob = async (blob: Blob) => {
-    if (!ensureAuthenticated()) return;
+  const processAudioBlob = async (blob: Blob, fileName?: string) => {
+    if (!ensureAuthenticated() || !user) return;
 
     try {
       setUploadProgress(10);
@@ -196,13 +196,6 @@ export const RecordingInterface = () => {
       if (tErr) throw tErr;
       const transcriptText: string = tData?.text || "";
 
-      setUploadProgress(60);
-      const { data: trData, error: trErr } = await supabase.functions.invoke('translate-text', {
-        body: { text: transcriptText, targetLanguage: 'English' },
-      });
-      if (trErr) throw trErr;
-      const translated: string = trData?.translated || "";
-
       setUploadProgress(85);
       const { data: sData, error: sErr } = await supabase.functions.invoke('summarize-text', {
         body: { transcript: transcriptText },
@@ -211,11 +204,31 @@ export const RecordingInterface = () => {
 
       const summary = sData?.summary || { keyTakeaways: [], actionItems: [], topics: [] };
 
-      const payload = { transcript: transcriptText, translation: translated, summary };
-      localStorage.setItem('latest_analysis', JSON.stringify(payload));
+      const meetingTitle = fileName || `Meeting - ${new Date().toLocaleString()}`;
+      
+      const { data: newMeeting, error: insertError } = await supabase
+        .from('meetings')
+        .insert({
+          user_id: user.id,
+          title: meetingTitle,
+          transcription_text: transcriptText,
+          summary: JSON.stringify(summary),
+          action_items: summary.actionItems,
+          status: 'completed',
+          duration_seconds: recordingTime,
+          file_size: blob.size,
+          file_type: blob.type,
+        })
+        .select()
+        .single();
+      
+      if (insertError) {
+        throw insertError;
+      }
+
       setUploadProgress(100);
-      shadcnToast({ title: 'Analysis complete', description: 'Opening your results...' });
-      navigate('/transcribes');
+      shadcnToast({ title: 'Analysis complete', description: 'Saving and opening your results...' });
+      navigate(`/transcribes/${newMeeting.id}`);
     } catch (err: any) {
       console.error('Processing error', err);
       setUploadProgress(0);
@@ -226,16 +239,22 @@ export const RecordingInterface = () => {
       if (err.name === 'FunctionsHttpError' && err.context) {
         try {
           const errorBody = await err.context.json();
-          if (errorBody.error && errorBody.error.type === 'insufficient_quota') {
-            title = 'OpenAI Quota Exceeded';
-            description = 'Your OpenAI account has insufficient funds or has hit its usage limit. Please check your plan and billing details on the OpenAI website.';
-          } else if (errorBody.error && errorBody.error.message) {
-            description = errorBody.error.message;
+          if (errorBody.error && errorBody.error.message) {
+            const message = errorBody.error.message.toLowerCase();
+            if (message.includes('quota') || message.includes('billing') || message.includes('credit')) {
+              title = 'AI Service Quota Exceeded';
+              description = 'Your AI provider account (e.g., Google) may have insufficient funds or has hit its usage limit. Please check your plan and billing details on their website.';
+            } else if (message.includes('api key not valid')) {
+                title = 'Invalid AI API Key';
+                description = 'The configured API key for the AI service is invalid. Please check the key in your Supabase project settings.';
+            } else {
+              description = errorBody.error.message;
+            }
           } else {
-            description = errorBody.error || `The Gemini AI service returned an error. Status: ${err.context.status}.`;
+            description = `The AI service returned an error. Status: ${err.context.status}.`;
           }
         } catch (e) {
-          description = `The Gemini AI service returned an unreadable error. Status: ${err.context.status}.`;
+          description = `The AI service returned an unreadable error. Status: ${err.context.status}.`;
         }
       } else if (err.message) {
         description = err.message;
@@ -257,7 +276,7 @@ export const RecordingInterface = () => {
     if (!file) return;
     setSelectedFileName(file.name);
     setUploadProgress(0);
-    await processAudioBlob(file);
+    await processAudioBlob(file, file.name);
   };
 
   const handleUploadClick = () => {
