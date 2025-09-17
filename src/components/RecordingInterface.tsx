@@ -241,7 +241,10 @@ export const RecordingInterface = () => {
           const errorBody = await err.context.json();
           if (errorBody.error && errorBody.error.message) {
             const message = errorBody.error.message.toLowerCase();
-            if (message.includes('quota') || message.includes('billing') || message.includes('credit')) {
+            if (message.includes('google api key') || message.includes('gemini_api_key') || errorBody.error.type === 'configuration_error') {
+              title = 'Configuration Error';
+              description = 'Google API key is missing. Please configure GOOGLE_API_KEY or GEMINI_API_KEY in your Supabase project settings under Edge Functions > Environment Variables.';
+            } else if (message.includes('quota') || message.includes('billing') || message.includes('credit')) {
               title = 'AI Service Quota Exceeded';
               description = 'Your AI provider account (e.g., Google) may have insufficient funds or has hit its usage limit. Please check your plan and billing details on their website.';
             } else if (message.includes('api key not valid')) {
@@ -256,6 +259,9 @@ export const RecordingInterface = () => {
         } catch (e) {
           description = `The AI service returned an unreadable error. Status: ${err.context.status}.`;
         }
+      } else if (err.message && err.message.includes('Failed to fetch')) {
+        title = 'Connection Error';
+        description = 'Unable to connect to the AI service. This might be due to missing API configuration. Please ensure GOOGLE_API_KEY is set in your Supabase project settings.';
       } else if (err.message) {
         description = err.message;
       }

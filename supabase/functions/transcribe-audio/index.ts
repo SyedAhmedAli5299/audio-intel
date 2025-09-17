@@ -12,11 +12,16 @@ serve(async (req) => {
   }
 
   try {
-    const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
+    const googleApiKey = Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY");
     if (!googleApiKey) {
-      console.error("CRITICAL: GOOGLE_API_KEY is not set.");
+      console.error("CRITICAL: GOOGLE_API_KEY or GEMINI_API_KEY is not set.");
       return new Response(
-        JSON.stringify({ error: { message: "Server configuration error: The GOOGLE_API_KEY is missing.", type: "server_error" } }),
+        JSON.stringify({ 
+          error: { 
+            message: "Server configuration error: Google API key is missing. Please set GOOGLE_API_KEY or GEMINI_API_KEY in your Supabase project settings.", 
+            type: "configuration_error" 
+          } 
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
