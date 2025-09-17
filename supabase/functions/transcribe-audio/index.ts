@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const googleApiKey = Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY");
+    const googleApiKey = Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("AIzaSyDMQI_t4__OGh9YSq5fsdfoLvS77A_a9vQ");
     if (!googleApiKey) {
       console.error("CRITICAL: GOOGLE_API_KEY or GEMINI_API_KEY is not set.");
       return new Response(
